@@ -2,6 +2,7 @@ import os
 from flask import Flask, request, jsonify
 import requests
 import json
+import re
 
 app = Flask(__name__)
 
@@ -14,7 +15,6 @@ SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx59Jc9RzVTD_3x2oC9RSAxVE-
 FINANCE_GROUP = "-1004461406737" 
 PACKING_GROUP = "-1004376924884" 
 
-# Event ID များကို မှတ်ထားပြီး စာထပ်မံမပို့အောင် တားဆီးရန် Database ယာယီဆောက်ခြင်း
 if not hasattr(app, 'processed_mid'):
     app.processed_mid = set()
 
@@ -43,9 +43,14 @@ def call_google_script(payload):
     except: pass
     return None
 
+# စာသားများထဲမှ ဖုန်းနံပါတ် သီးသန့်ဆွဲထုတ်ယူသည့် စနစ်
+def extract_phone(text):
+    match = re.search(r'(09\d{7,11})', text.replace(" ", "").replace("-", ""))
+    return match.group(1) if match else "မသိရပါ"
+
 @app.route('/', methods=['GET'])
 def home():
-    return "🚀 Live Dedicated Engine v45.0 [Fix Duplicate & Prompt Engine] - Online!"
+    return "🚀 Live Dedicated Engine v50.0 [Advanced Intent & Clean Tracking] - Online!"
 
 @app.route('/webhook', methods=['GET', 'POST'])
 def webhook():
@@ -55,7 +60,6 @@ def webhook():
         return "Facebook Endpoint Active", 200
         
     elif request.method == 'POST':
-        # စာထပ်မံမလာစေရန် Facebook အား ချက်ချင်း တုံ့ပြန်မှုပေးခြင်း (200 OK Fast Response)
         try:
             data = request.get_json() or {}
             if data.get("object") == "page":
@@ -65,37 +69,45 @@ def webhook():
                             message_data = messaging_event["message"]
                             mid = message_data.get("mid")
                             
-                            # စာသားထပ်နေပါက လုံးဝကျော်သွားရန်
-                            if mid in app.processed_mid:
-                                return "EVENT_RECEIVED", 200
+                            if mid in app.processed_mid: return "EVENT_RECEIVED", 200
                             if mid:
                                 app.processed_mid.add(mid)
-                                # Cache မကြီးထွားစေရန် ၅၀ ကျော်ပါက အဟောင်းဖြတ်ခြင်း
-                                if len(app.processed_mid) > 50:
-                                    app.processed_mid.pop()
+                                if len(app.processed_mid) > 50: app.processed_mid.pop()
 
                             sender_id = str(messaging_event["sender"]["id"])
                             customer_msg = message_data.get("text", "").strip()
                             if not customer_msg: continue
 
-                            # Gemini Content Process
+                            # --- RULE 1: COMPLAIN & BAD FEEDBACK DETECTION ---
+                            complain_keywords = ["မရဘူး", "ပျက်", "မှား", "မကြိုက်", "နောက်ကျ", "ကြာတယ်", "အဆင်မပြေ", "မတက်ဘူး", "လဲ", "ပြန်အမ်း", "တိုင်"]
+                            if any(kw in customer_msg.lower() for kw in complain_keywords):
+                                fallback_reply = "မင်္ဂလာပါရှင်၊ လူကြီးမင်း ကြုံတွေ့ရတဲ့ အခက်အခဲအတွက် စိတ်မကောင်းပါဘူးရှင်။ အကြောင်းအရာကို ဝန်ထမ်းများမှ အမြန်ဆုံး စစ်ဆေးပြီး အဆင်ပြေအောင် ဖြေရှင်းပေးပါမည်ရှင်။ ခေတ္တစောင့်ဆိုင်းပေးပါဦးရှင့်။"
+                                send_fb_message(sender_id, fallback_reply)
+                                
+                                # Complain ဖြစ်ပါကလည်း Telegram သို့ လိုရင်းတိုရှင်း ပို့မည်
+                                comp_alert = f"⚠️ *COMPLAIN သတိပေးချက်*\n\n👤 *ID:* `{sender_id}`\n💬 *ဝယ်သူစာ:* {customer_msg}"
+                                send_telegram_message(FINANCE_GROUP, comp_alert)
+                                continue
+
+                            # Gemini Core AI Integration
                             try:
                                 sheet_data = call_google_script({"action": "read"})
                                 inventory_context = ""
                                 if sheet_data and sheet_data.get("status") == "success" and "data" in sheet_data:
-                                    inventory_context = "📦 လက်ရှိဆိုင်ရှိ ပစ္စည်းစာရင်းစာအုပ်နှင့် လက်ကျန်များ -\n"
+                                    inventory_context = "📦 ဆိုင်ရှိ ပစ္စည်းများနှင့် လက်ကျန်စာရင်း -\n"
                                     for item in sheet_data["data"]:
                                         p_name = item.get("product_name") or item.get("productname") or "မသိပါ"
                                         p_price = item.get("price") or "ညှိနှိုင်း"
                                         p_stock = item.get("stock") or "0"
-                                        inventory_context += f"🔹 {p_name} | စျေး: {p_price} ကျပ် | လက်ကျန်: {p_stock} ခု\n"
+                                        inventory_context += f"- {p_name} | စျေး: {p_price} ကျပ် | လက်ကျန်: {p_stock} ခု\n"
 
-                                # [🎯 CRITICAL FIX] Gemini 2.5 စနစ်အမှန်အတွက် System Instruction အား Parameter သီးသန့်ခွဲထုတ်ခြင်း
+                                # [🎯 ULTRA SYSTEM INSTRUCTION] AI ကို စကားမများစေရန် ဥပဒေသတင်းကျပ်စွာ ပေးခြင်း
                                 system_instruction = (
-                                    "မင်းက မြန်မာနိုင်ငံက နာမည်ကြီး Online Shop အရောင်းစာရေးမလေး ဖြစ်တယ်။ "
-                                    "ယဉ်ကျေးပျူငှာစွာနှင့် လိုရင်းတိုရှင်း ကွက်တိသာ ပြန်ဖြေပါ။ စကားလုံးများ ထပ်ခါတလဲလဲ မပြောပါနှင့်။ "
-                                    "ကာစတန်မာက ဝယ်ယူလိုသည်ဟု ဆိုပါက သို့မဟုတ် အမည်၊ ဖုန်း၊ လိပ်စာ ပေးလာပါက "
-                                    "ပစ္စည်းစာရင်းထဲတွင် လက်ကျန်ရှိမရှိ အရင်စစ်ဆေးပြီး 'အမှာစာကို စနစ်တကျ မှတ်တမ်းတင်ပေးပြီးပါပြီရှင်' ဟုသာ ယဉ်ကျေးစွာ ပြောပါ။"
+                                    "You are an AI assistant for a retail online shop. Answer in Burmese yanjayswar and strictly brief.\n"
+                                    "RULES:\n"
+                                    "1. ONLY answer about product price and stock availability based on the context provided.\n"
+                                    "2. If the user gives phone/address or wants to buy, check stock. If available, reply exactly: 'အမှာစာကို စနစ်တကျ မှတ်တမ်းတင်ပေးပြီးပါပြီရှင်။'\n"
+                                    "3. Do not chat or give extra filler words. Keep it to 1-2 lines maximum."
                                 )
 
                                 gemini_payload = {
@@ -115,18 +127,32 @@ def webhook():
                                 if not ai_reply:
                                     ai_reply = "မင်္ဂလာပါရှင်၊ လူကြီးမင်းမေးမြန်းမှုကို ဝန်ထမ်းများမှ မကြာမီ စစ်ဆေးဖြေကြားပေးပါမည်ရှင်။"
 
-                                # --- TELEGRAM SMART NOTIFICATION ENGINE ---
-                                # အမှန်တကယ် ဝယ်ယူသည့် အချက်အလက် (ဥပမာ ဖုန်းနံပါတ် သို့မဟုတ် ဝယ်မည်) ပါမှသာ Telegram သို့ ပို့မည်
-                                trigger_keywords = ["ဝယ်", "ယူမယ်", "ငွေလွှဲ", "kpay", "wave", "ဘဏ်", "099", "092", "094", "097", "098", "မန္တလေး", "ရန်ကုန်"]
-                                if any(keyword in customer_msg.lower() for keyword in trigger_keywords):
-                                    notification_text = f"📢 *အမှာစာအသစ် ရရှိပါသည်*\n\n👤 *Customer ID:* `{sender_id}`\n💬 *ဝယ်ယူသူ မက်ဆေ့ခ်ျ:* {customer_msg}\n🤖 *AI တုံ့ပြန်မှု:* {ai_reply}"
-                                    send_telegram_message(FINANCE_GROUP, notification_text)
-                                    send_telegram_message(PACKING_GROUP, notification_text)
+                                # --- RULE 2: SMART COD / PRE-PAID & TELEGRAM CLEAN NOTIFICATION ---
+                                order_triggers = ["ဝယ်", "ယူမယ်", "ငွေလွှဲ", "kpay", "wave", "ဘဏ်", "09", "လိပ်စာ", "မြို့", "လမ်း", "ယူမည်"]
+                                if any(tok in customer_msg.lower() for tok in order_triggers):
+                                    # Payment Method ဉာဏ်ရည်တုဖြင့် ခွဲခြားခြင်း
+                                    pay_method = "COD (ပစ္စည်းရောက်မှငွေချေ)"
+                                    prepaid_signals = ["လွှဲပြီး", "kpay", "wave", "screenshot", "ဘဏ်", "ကတ်", "cb", "ayeyar", "kbz"]
+                                    if any(ps in customer_msg.lower() for ps in prepaid_signals):
+                                        pay_method = "Pre-paid (ငွေကြိုလွှဲ)"
+
+                                    phone_extracted = extract_phone(customer_msg)
+                                    
+                                    # [⚠️ CLEAN TELEGRAM FORMAT] စာသားအပိုများ လုံးဝမပါဘဲ ကွက်တိ စာရင်းဇယားပုံစံသာ ပို့ပေးမည့်စနစ်
+                                    clean_tg_text = (
+                                        f"📋 *အမှာစာအသစ် ရရှိပါသည်*\n"
+                                        f"👤 *Customer ID:* `{sender_id}`\n"
+                                        f"💬 *ဝယ်သူစာ:* {customer_msg}\n"
+                                        f"📱 *ဖုန်းနံပါတ်:* {phone_extracted}\n"
+                                        f"💳 *ငွေချေစနစ်:* {pay_method}"
+                                    )
+                                    send_telegram_message(FINANCE_GROUP, clean_tg_text)
+                                    send_telegram_message(PACKING_GROUP, clean_tg_text)
 
                                 send_fb_message(sender_id, ai_reply)
 
                             except Exception as e:
-                                send_fb_message(sender_id, "မင်္ဂလာပါရှင်၊ ခေတ္တစောင့်ဆိုင်းပေးပါဦးရှင်။")
+                                send_fb_message(sender_id, "မင်္ဂလာပါရှင်၊ မကြာမီ ဝန်ထမ်းများမှ ပြန်လည်ဖြေကြားပေးပါမည်ရှင်။")
                                 
                 return "EVENT_RECEIVED", 200
         except:
