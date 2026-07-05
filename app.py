@@ -13,7 +13,10 @@ SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx59Jc9RzVTD_3x2oC9RSAxVE-
 if not hasattr(app, 'processed_mid'): app.processed_mid = set()
 
 def get_gemini_url():
-    current_key = os.environ.get("GEMINI_API_KEY", "").strip() or os.environ.get("gemini_api_key", "").strip()
+    # Render Dashboard ထဲက API Key နာမည် ပုံစံမျိုးစုံကို အကုန်မိအောင် ဖတ်သည့်စနစ်
+    current_key = (os.environ.get("GEMINI_API_KEY", "").strip() or 
+                   os.environ.get("gemini_api_key", "").strip() or 
+                   os.environ.get("Gemini_Api_Key", "").strip())
     return f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={current_key}"
 
 def send_fb_message(recipient_id, text_reply):
@@ -32,10 +35,10 @@ def call_google_script(payload):
     except: pass
     return None
 
-# --- GOOGLE SHEET + INTELLIGENT CHAT LOGIC ---
+# --- RESTRUCTURED DEDICATED CHAT CORE ---
 def process_async_message(sender_id, customer_msg):
     try:
-        # ၁။ Google Sheet ထဲက လက်ရှိ ပစ္စည်းစာရင်းနဲ့ စျေးနှုန်း Data များကို ဆွဲဖတ်ခြင်း
+        # ၁။ Google Sheet မှ ပစ္စည်းနှင့် စျေးနှုန်းစာရင်းကို ကြိုတင်ဖတ်ယူခြင်း
         sheet_data = call_google_script({"action": "read"})
         inventory_context = ""
         if sheet_data and sheet_data.get("status") == "success" and "data" in sheet_data:
@@ -47,7 +50,7 @@ def process_async_message(sender_id, customer_msg):
                 if p_name:
                     inventory_context += f"- {p_name} | စျေး: {p_price} ကျပ် | လက်ကျန်: {p_stock} ခု\n"
 
-        # ၂။ AI အား ပျူငှာစွာနှင့် Sheet ပါ အချက်အလက်အတိုင်း ဖြေကြားရန် ညွှန်ကြားခြင်း
+        # ၂။ AI အား ဘာမေးမေး အလိုက်သင့် ညင်သာစွာ ဖြေကြားရန် စည်းကမ်းချက်ပေးခြင်း
         system_instruction = (
             "မင်းက မြန်မာနိုင်ငံက Online Shop အရောင်းဝန်ထမ်း AI ဖြစ်တယ်။ "
             "ကာစတန်မာက ဘာပဲလာမေးမေး (နှုတ်ဆက်တာ၊ ပစ္စည်းအကြောင်း၊ စျေးမေးတာ၊ complain တက်တာ သို့မဟုတ် တခြားအထွေထွေစကားပြောတာ) "
@@ -62,7 +65,7 @@ def process_async_message(sender_id, customer_msg):
             "systemInstruction": {"parts": [{"text": system_instruction}]}
         }
         
-        # ၃။ Gemini AI API သို့ လှမ်းခေါ်ခြင်း
+        # ၃။ Gemini API သို့ လှမ်းခေါ်ခြင်း
         gemini_res = requests.post(get_gemini_url(), headers={'Content-Type': 'application/json'}, data=json.dumps(gemini_payload), timeout=12)
         res_json = gemini_res.json()
         
@@ -70,19 +73,19 @@ def process_async_message(sender_id, customer_msg):
         if "candidates" in res_json and len(res_json["candidates"]) > 0:
             ai_reply = res_json["candidates"][0]["content"]["parts"][0]["text"].strip()
         
+        # API Key ကြောင့် Error တက်ပါက သို့မဟုတ် အဖြေမထွက်ပါက တုံ့ပြန်မည့်စာသား
         if not ai_reply:
-            ai_reply = "မင်္ဂလာပါရှင်၊ လူကြီးမင်းမေးမြန်းမှုကို ဝန်ထမ်းများမှ မကြာမီ စစ်ဆေးဖြေကြားပေးပါမည်ရှင်။"
+            ai_reply = "မင်္ဂလာပါရှင်၊ လူကြီးမင်းမေးမြန်းထားသော အကြောင်းအရာကို ဝန်ထမ်းများမှ မကြာမီ အသေးစိတ် ချက်ချင်း ဆက်သွယ်ဖြေကြားပေးပါမည်ရှင်။"
 
-        # ၄။ Facebook Messenger သို့ Message ပေးပို့ခြင်း
         send_fb_message(sender_id, ai_reply)
 
     except Exception as e:
         print(f"❌ Core Process Error: {e}")
-        send_fb_message(sender_id, "မင်္ဂလာပါရှင်၊ လူကြီးမင်းမေးမြန်းထားသော အကြောင်းအရာကို ဝန်ထမ်းများမှ ချက်ချင်း ပြန်လည်ဖြေကြားပေးပါမည်ရှင်။")
+        send_fb_message(sender_id, "မင်္ဂလာပါရှင်၊ လူကြီးမင်းမေးမြန်းမှုကို ဝန်ထမ်းများမှ ချက်ချင်း ပြန်လည်ဖြေကြားပေးပါမည်ရှင်။")
 
 @app.route('/', methods=['GET'])
 def home():
-    return "🚀 Live Dedicated Engine v180.0 [AI Chat + Google Sheet Integrated] - Online!"
+    return "🚀 Live Dedicated Engine v200.0 [Advanced Sheet & Chat Stability] - Online!"
 
 @app.route('/webhook', methods=['GET', 'POST'])
 def webhook():
