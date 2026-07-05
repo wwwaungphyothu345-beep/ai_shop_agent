@@ -29,6 +29,26 @@ def send_fb_message(recipient_id, text_reply):
         requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=5)
     except: pass
 
+# [🎯 NEW] Telegram ထံသို့ Confirm Buttons (Inline Keyboard) ဖြင့် စာလှမ်းပို့သည့်စနစ်
+def send_telegram_with_buttons(chat_id, text, customer_id):
+    try:
+        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+        payload = {
+            "chat_id": chat_id,
+            "text": text,
+            "parse_mode": "Markdown",
+            "reply_markup": {
+                "inline_keyboard": [
+                    [
+                        {"text": "Confirm 🟢", "callback_data": f"conf_{customer_id}"},
+                        {"text": "Reject 🔴", "callback_data": f"rej_{customer_id}"}
+                    ]
+                ]
+            }
+        }
+        requests.post(url, json=payload, timeout=5)
+    except: pass
+
 def send_telegram_message(chat_id, text):
     try:
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
@@ -45,7 +65,7 @@ def call_google_script(payload):
 
 @app.route('/', methods=['GET'])
 def home():
-    return "🚀 Live Dedicated Engine v60.0 [Advanced E-Commerce Workflow] - Online!"
+    return "🚀 Live Dedicated Engine v65.0 [Telegram Inline Button & Settings Reader] - Online!"
 
 @app.route('/webhook', methods=['GET', 'POST'])
 def webhook():
@@ -61,8 +81,6 @@ def webhook():
                 for entry in data.get("entry", []):
                     for messaging_event in entry.get("messaging", []):
                         
-                        # --- TELEGRAM GROUP မှ FINANCE CONFIRMATION စစ်ဆေးခြင်း ---
-                        # (ဒီစနစ်က Telegram ဘက်ကလာတဲ့ Chat မဟုတ်ဘဲ Webhook Event တွေကို ခွဲခြားပါတယ်)
                         if messaging_event.get("message"):
                             message_data = messaging_event["message"]
                             mid = message_data.get("mid")
@@ -74,7 +92,7 @@ def webhook():
 
                             sender_id = str(messaging_event["sender"]["id"])
                             
-                            # ဓာတ်ပုံ သို့မဟုတ် Screenshot လာပါက (Pre-paid / Transfer Capture)
+                            # ဓာတ်ပုံ သို့မဟုတ် Screenshot ငွေလွှဲပြေစာ လာပါက
                             if "attachments" in message_data:
                                 for att in message_data["attachments"]:
                                     if att["type"] == "image":
@@ -82,29 +100,27 @@ def webhook():
                                         state = app.user_states.get(sender_id, {})
                                         
                                         fn_alert = (
-                                            f"💰 *ငွေလွှဲပေးပို့လာပါသည် (Finance Group အတည်ပြုရန်)*\n\n"
+                                            f"💰 *ငွေလွှဲပြေစာ ရရှိပါသည်*\n\n"
                                             f"👤 *Customer ID:* `{sender_id}`\n"
                                             f"📦 *ပစ္စည်း:* {state.get('product', 'မသိရပါ')}\n"
                                             f"📱 *ဖုန်း:* {state.get('phone', 'မသိရပါ')}\n"
                                             f"📍 *လိပ်စာ:* {state.get('address', 'မသိရပါ')}\n"
                                             f"🖼️ *ငွေလွှဲပြေစာ:* [ကြည့်ရှုရန်]({img_url})"
                                         )
-                                        send_telegram_message(FINANCE_GROUP, fn_alert)
-                                        send_fb_message(sender_id, "ငွေလွှဲပြေစာ (Screenshot) ရရှိပါပြီရှင်။ ငွေစာရင်းဌာနမှ စစ်ဆေးအတည်ပြုပေးနေပါသဖြင့် ခေတ္တစောင့်ဆိုင်းပေးပါရှင်။")
+                                        # Button စနစ်ဖြင့် Telegram Finance သို့ အော်တိုပို့ခြင်း
+                                        send_telegram_with_buttons(FINANCE_GROUP, fn_alert, sender_id)
+                                        send_fb_message(sender_id, "ငွေလွှဲပြေစာ ရရှိပါပြီရှင်။ ငွေစာရင်းဌာနမှ စစ်ဆေးအတည်ပြုပေးနေပါသဖြင့် ခေတ္တစောင့်ဆိုင်းပေးပါရှင်။")
                                 return "EVENT_RECEIVED", 200
 
                             customer_msg = message_data.get("text", "").strip()
                             if not customer_msg: continue
 
-                            # State ယူခြင်း
                             if sender_id not in app.user_states:
                                 app.user_states[sender_id] = {"step": "browsing", "product": "", "address": "", "phone": ""}
                             
                             state = app.user_states[sender_id]
 
-                            # --- အဆင့်ဆင့် လုပ်ငန်းစဉ် (WORKFLOW ENGINE) ---
-                            
-                            # ၁။ ပစ္စည်းမေးမြန်းခြင်း အဆင့်
+                            # Workflow Engine
                             if state["step"] == "browsing":
                                 sheet_data = call_google_script({"action": "read"})
                                 inventory_context = ""
@@ -143,7 +159,6 @@ def webhook():
                             elif state["step"] == "waiting_phone":
                                 state["phone"] = customer_msg
                                 
-                                # --- GOOGLE SHEET မှ COD မြို့နယ်များနှင့် တိုက်စစ်ခြင်း ---
                                 sheet_townships = call_google_script({"action": "read_cod_townships"})
                                 cod_available = False
                                 if sheet_townships and "data" in sheet_townships:
@@ -154,27 +169,29 @@ def webhook():
                                             break
                                 
                                 if cod_available:
-                                    # COD ရပါက အမှာစာကို အလိုအလျောက် အတည်ပြုပြီး Packing သို့ တန်းပို့သည်
                                     send_fb_message(sender_id, f"လူကြီးမင်းတို့ မြို့နယ်သည် အိမ်အရောက်ငွေချေ (COD) ရသော မြို့နယ်ဖြစ်သဖြင့် အမှာစာကို စနစ်တကျ မှတ်တမ်းတင်ပေးလိုက်ပါပြီရှင်။")
-                                    
                                     pk_alert = (
                                         f"📦 *အမှာစာအသစ် ရရှိပါသည် (COD System)*\n\n"
                                         f"👤 *Customer ID:* `{sender_id}`\n"
                                         f"🛍️ *ပစ္စည်းအမျိုးအစား/အရေအတွက်:* {state['product']}\n"
                                         f"📱 *ဖုန်းနံပါတ်:* {state['phone']}\n"
                                         f"📍 *ပို့ဆောင်ရမည့်လိပ်စာ:* {state['address']}\n"
-                                        f"💳 *ငွေချေစနစ်:* COD (ပစ္စည်းရောက်မှငွေချေ)"
+                                        f"💳 *ငွေချေစနစ်:* COD"
                                     )
                                     send_telegram_message(PACKING_GROUP, pk_alert)
                                     state["step"] = "completed"
                                 else:
-                                    # COD မရပါက ဘဏ်စာရင်းများထုတ်ပေးပြီး ငွေကြိုလွှဲခိုင်းသည်
-                                    sheet_banks = call_google_script({"action": "read_banks"})
-                                    bank_info = "🔹 KBZ Pay: 09xxxxxxx\n🔹 Wave Pay: 09xxxxxxx"
-                                    if sheet_banks and "data" in sheet_banks:
-                                        bank_info = ""
+                                    # [🎯 FIXED] Sheet ထဲရှိ 'settings' tab မှ ဘဏ်စာရင်းများကို တိုက်ရိုက်ခေါ်ဖတ်သည့်စနစ်
+                                    sheet_banks = call_google_script({"action": "read_banks", "sheet_name": "settings"})
+                                    bank_info = ""
+                                    if sheet_banks and "data" in sheet_banks and len(sheet_banks["data"]) > 0:
                                         for b in sheet_banks["data"]:
-                                            bank_info += f"🔹 {b.get('bank_name')}: {b.get('account_no')} ({b.get('account_name')})\n"
+                                            b_name = b.get("bank_name") or b.get("bankname") or "Bank"
+                                            b_no = b.get("account_no") or b.get("accountno") or "0000"
+                                            b_owner = b.get("account_name") or b.get("accountname") or ""
+                                            bank_info += f"🔹 {b_name}: {b_no} ({b_owner})\n"
+                                    else:
+                                        bank_info = "🔹 Kpay: 09xxxxxxxx\n🔹 Wavepay: 09xxxxxxxx\n"
                                             
                                     reply_msg = (
                                         f"လူကြီးမင်းတို့ မြို့နယ်သည် COD မရရှိနိုင်သေးသောကြောင့် ငွေကြိုလွှဲစနစ်ဖြင့်သာ ဆောင်ရွက်ပေးရပါမည်ရှင်။\n\n"
@@ -189,45 +206,66 @@ def webhook():
             return jsonify({"status": "error"}), 500
     return "Not Found", 404
 
-# --- TELEGRAM BOT WEBHOOK (FINANCE မှ CONFIRM နှိပ်ခြင်းနှင့် PACKING မှ VOUCHER တင်ခြင်း စီမံရန်) ---
+# --- TELEGRAM BOT WEBHOOK (ခလုတ်နှိပ်မှု တုံ့ပြန်ချက် Callback များကို ဖတ်ရန်) ---
 @app.route('/telegram', methods=['POST'])
 def telegram_webhook():
     try:
         tg_data = request.get_json() or {}
-        if "message" in tg_data:
+        
+        # [🎯 NEW] Inline Keyboard Button နှိပ်လိုက်သည့်အခါ Callback ရယူခြင်း
+        if "callback_query" in tg_data:
+            cb = tg_data["callback_query"]
+            cb_id = cb["id"]
+            data_field = cb["data"]
+            chat_id = str(cb["message"]["chat"]["id"])
+            message_id = cb["message"]["message_id"]
+            
+            # Confirm 🟢 ကို နှိပ်လိုက်လျှင်
+            if data_field.startswith("conf_"):
+                c_id = data_field.replace("conf_", "")
+                state = app.user_states.get(c_id, {})
+                
+                pk_alert = (
+                    f"📦 *ငွေလွှဲအတည်ပြုပြီး အမှာစာ (Pre-paid)*\n\n"
+                    f"👤 *Customer ID:* `{c_id}`\n"
+                    f"🛍️ *ပစ္စည်းအမျိုးအစား/အရေအတွက်:* {state.get('product', 'မသိရပါ')}\n"
+                    f"📱 *ဖုန်းနံပါတ်:* {state.get('phone', 'မသိရပါ')}\n"
+                    f"📍 *ပို့ဆောင်ရမည့်လိပ်စာ:* {state.get('address', 'မသိရပါ')}\n"
+                    f"💳 *ငွေချေစနစ်:* Pre-paid (ငွေလွှဲဝင်ပြီး)"
+                )
+                # Packing ဆီသို့ စာရင်းတန်းပို့သည်
+                send_telegram_message(PACKING_GROUP, pk_alert)
+                send_fb_message(c_id, "လူကြီးမင်း၏ ငွေလွှဲမှုကို အတည်ပြုပြီးပါပြီရှင်။ ပစ္စည်းများကို ထုပ်ပိုးရေးဌာနသို့ လွှဲပြောင်းပေးလိုက်ပြီဖြစ်လို့ ခေတ္တစောင့်ဆိုင်းပေးပါရှင်။")
+                
+                # Finance Group ထဲရှိ စာသားကို အတည်ပြုပြီးကြောင်း အစိမ်းရောင်စာသားပြောင်းလဲခြင်း
+                requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/editMessageText", json={
+                    "chat_id": chat_id, "message_id": message_id,
+                    "text": f"✅ *အတည်ပြုပြီးပါပြီ* (Customer ID: `{c_id}` ၏ အမှာစာအား Packing Team ထံ ပို့ပြီးပါပြီ။)"
+                })
+                
+            # Reject 🔴 ကို နှိပ်လိုက်လျှင်
+            elif data_field.startswith("rej_"):
+                c_id = data_field.replace("rej_", "")
+                send_fb_message(c_id, "လူကြီးမင်း ပေးပို့လာသော ငွေလွှဲပြေစာအား စစ်ဆေးရာတွင် အဆင်မပြေမှုတစ်ခုရှိနေပါသဖြင့် ဝန်ထမ်းများမှ ချက်ချင်း ဆက်သွယ်ပေးပါမည်ရှင်။")
+                
+                requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/editMessageText", json={
+                    "chat_id": chat_id, "message_id": message_id,
+                    "text": f"❌ *ငြင်းပယ်လိုက်ပါသည်* (Customer ID: `{c_id}` ထံသို့ စစ်ဆေးရန် အကြောင်းကြားစာ ပို့ပြီးပါပြီ။)"
+                })
+                
+            # Telegram စက်ဝိုင်းလည်နေတာကို ပိတ်ရန် answerCallbackQuery ခေါ်ခြင်း
+            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/answerCallbackQuery", json={"callback_query_id": cb_id})
+
+        # Packing Group မှ Voucher တင်ခြင်းစနစ် (ပုံမှန်အတိုင်း)
+        elif "message" in tg_data:
             msg = tg_data["message"]
             chat_id = str(msg["chat"]["id"])
-            text = msg.get("text", "").strip()
-
-            # ၁။ Finance Group ကနေ "confirm [Customer_ID]" ဟု ရိုက်၍ အတည်ပြုခြင်း
-            if chat_id == FINANCE_GROUP and text.lower().startswith("confirm"):
-                parts = text.split()
-                if len(parts) > 1:
-                    c_id = parts[1]
-                    state = app.user_states.get(c_id, {})
-                    
-                    # Packing Group သို့ အမှာစာအချက်အလက်သန့်သန့် ပို့ပေးခြင်း
-                    pk_alert = (
-                        f"📦 *ငွေလွှဲအတည်ပြုပြီး အမှာစာ (Pre-paid)*\n\n"
-                        f"👤 *Customer ID:* `{c_id}`\n"
-                        f"🛍️ *ပစ္စည်းအမျိုးအစား/အရေအတွက်:* {state.get('product', 'မသိရပါ')}\n"
-                        f"📱 *ဖုန်းနံပါတ်:* {state.get('phone', 'မသိရပါ')}\n"
-                        f"📍 *ပို့ဆောင်ရမည့်လိပ်စာ:* {state.get('address', 'မသိရပါ')}\n"
-                        f"💳 *ငွေချေစနစ်:* Pre-paid (ငွေလွှဲဝင်ပြီး)"
-                    )
-                    send_telegram_message(PACKING_GROUP, pk_alert)
-                    send_telegram_message(FINANCE_GROUP, f"✅ Customer ID `{c_id}` ၏ အမှာစာအား Packing Team ထံသို့ လွှဲပြောင်းပေးလိုက်ပါပြီ။")
-                    send_fb_message(c_id, "လူကြီးမင်း၏ ငွေလွှဲမှုကို အတည်ပြုပြီးပါပြီရှင်။ ပစ္စည်းများကို ထုပ်ပိုးရေးဌာနသို့ လွှဲပြောင်းပေးလိုက်ပြီဖြစ်လို့ ခေတ္တစောင့်ဆိုင်းပေးပါရှင်။")
-
-            # ၂။ Packing Group ကနေ Customer ID ရိုက်ပြီး ဘောင်ချာပုံ/စာ ပို့ခြင်း
-            elif chat_id == PACKING_GROUP and ("photo" in msg or "document" in msg):
-                # စာသားထဲတွင် Customer ID ပါမပါ စစ်ဆေးခြင်း
+            if chat_id == PACKING_GROUP and ("photo" in msg or "document" in msg):
                 caption = msg.get("caption", "").strip()
                 c_id_match = re.search(r'(\d{15,20})', caption)
                 if c_id_match:
                     c_id = c_id_match.group(1)
                     send_fb_message(c_id, f"📦 လူကြီးမင်းမှာယူထားသော ပစ္စည်းအား ထုပ်ပိုးပြီးစီးသွားပါပြီရှင်။ ပစ္စည်းပေးပို့မှု ဘောင်ချာ (Voucher) အား ပူးတွဲပေးပို့အပ်ပါတယ်ရှင် -\n\n{caption}")
-                    send_telegram_message(PACKING_GROUP, f"✅ Customer `{c_id}` ထံသို့ ဘောင်ချာ ပေးပို့ပြီးပါပြီ။")
 
         return jsonify({"status": "ok"}), 200
     except:
