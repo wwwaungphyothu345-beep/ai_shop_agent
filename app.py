@@ -2,14 +2,12 @@ import os
 from flask import Flask, request, jsonify
 import requests
 import json
-import re
 import threading
 
 app = Flask(__name__)
 
 # --- CONFIGURATION SETUP ---
 BOT_TOKEN = "8996226211:AAH6G64un9oNG2qFRG0RRcCadoHdTDUpeJY"
-# ဆိုင်ရှင်ကြီး ပို့ပေးထားသော Token အသစ်စစ်စစ်ကြီးအား စနစ်တစ်ခုလုံးနှင့် ချိတ်ဆက်လိုက်ပါပြီ
 PAGE_ACCESS_TOKEN = "EAAWTc0UsYPgBR45NIFxOFGnOPn8ji8WlcseZAF483nv1I8VoRXa3ryPUyBLsclEgEGf3hZBlZASNZAnssvA7PnIBg0paS4zBVu7CmdTrqOS21zTpUSgIXDAVxT8UoF6seZAZB6mtkUeEkAdoSWhfPfJLUdzYnmxBZAynxW1OJvvk78FySknSOZA33MIGRzMLPh45OBH1WKwvIwZDZD"
 SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx59Jc9RzVTD_3x2oC9RSAxVE-mLkjCwjMvld1N5yk8-ej4UFvPyQhqO9W01sfBjcYS/exec"
 
@@ -18,10 +16,6 @@ PACKING_GROUP = "-1004376924884"
 
 if not hasattr(app, 'processed_mid'): app.processed_mid = set()
 if not hasattr(app, 'user_states'): app.user_states = {}
-
-def get_gemini_url():
-    current_key = os.environ.get("GEMINI_API_KEY", "").strip() or os.environ.get("gemini_api_key", "").strip()
-    return f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={current_key}"
 
 def send_fb_message(recipient_id, text_reply):
     try:
@@ -61,10 +55,10 @@ def call_google_script(payload):
     except: pass
     return None
 
-# --- CORE ASYNC WORKFLOW ENGINE ---
+# --- FAIL-SAFE CORE INTELLIGENCE (NO API KEY REQUIRED) ---
 def process_async_message(sender_id, customer_msg, message_data):
     try:
-        # ၁။ ပုံ သို့မဟုတ် ငွေလွှဲ Screenshot လာသည့်အဆင့် စီမံခန့်ခွဲခြင်း
+        # ၁။ ပုံ/Screenshot စစ်ဆေးခြင်း
         if "attachments" in message_data:
             for att in message_data["attachments"]:
                 if att["type"] == "image":
@@ -87,41 +81,16 @@ def process_async_message(sender_id, customer_msg, message_data):
             app.user_states[sender_id] = {"step": "browsing", "product": "", "address": "", "phone": ""}
         
         state = app.user_states[sender_id]
+        msg_lower = customer_msg.lower()
 
-        # ၂။ ပစ္စည်းစာရင်း (Stock) ဖတ်ယူခြင်း
-        sheet_data = call_google_script({"action": "read"})
-        inventory_context = ""
-        if sheet_data and sheet_data.get("status") == "success" and "data" in sheet_data:
-            for item in sheet_data["data"]:
-                p_name = item.get("product_name") or item.get("productname") or ""
-                p_price = item.get("price") or ""
-                p_stock = item.get("stock") or "0"
-                inventory_context += f"- {p_name} | စျေး: {p_price} | လက်ကျန်: {p_stock}\n"
-
-        # ၃။ Gemini Logic ပိုင်း ချိတ်ဆက်ခြင်း
-        system_instruction = (
-            "You are a helpful retail shop assistant. Answer in Burmese briefly. "
-            "If the customer expresses intent to buy, ask them exactly: 'ဝယ်ယူမည့် ပစ္စည်းအမည်နှင့် အရေအတွက်ကို ပြောပေးပါရှင်။'"
-        )
-        gemini_payload = {
-            "contents": [{"parts": [{"text": f"{inventory_context}\n\nCustomer: {customer_msg}"}]}],
-            "systemInstruction": {"parts": [{"text": system_instruction}]}
-        }
-        
-        gemini_res = requests.post(get_gemini_url(), headers={'Content-Type': 'application/json'}, data=json.dumps(gemini_payload), timeout=12)
-        res_json = gemini_res.json()
-        
-        ai_reply = ""
-        if "candidates" in res_json and len(res_json["candidates"]) > 0:
-            ai_reply = res_json["candidates"][0]["content"]["parts"][0]["text"].strip()
-        
-        if not ai_reply:
-            ai_reply = "မင်္ဂလာပါရှင်၊ ပစ္စည်းနှင့်ပတ်သက်ပြီး သိလိုသည်များကို မေးမြန်းနိုင်ပါတယ်ရှင်။"
-
-        # ၄။ တစ်ဆင့်ချင်းစီ မေးမြန်းမည့် Flow စီမံခြင်း
-        if state["step"] == "browsing" and ("ဝယ်ယူမည့်" in ai_reply or "ပစ္စည်းအမည်" in ai_reply):
-            state["step"] = "waiting_product"
-            send_fb_message(sender_id, ai_reply)
+        # ၂။ မှာယူမည့်အဆင့်များကို API မလိုဘဲ စနစ်တကျ မေးမြန်းခြင်း Flow
+        if state["step"] == "browsing":
+            buy_keywords = ["ဝယ်", "ယူမယ်", "မှာမယ်", "buy", "order", "ဈေးဘယ်လောက်", "price"]
+            if any(k in msg_lower for k in buy_keywords):
+                state["step"] = "waiting_product"
+                send_fb_message(sender_id, "မင်္ဂလာပါရှင်၊ ဝယ်ယူမည့် ပစ္စည်းအမည်နှင့် အရေအတွက်ကို ပြောပေးပါရှင်။")
+            else:
+                send_fb_message(sender_id, "မင်္ဂလာပါရှင်၊ လူကြီးမင်းတို့ သိလိုသမျှ ပစ္စည်းအမေးအမြန်းများကို ဝန်ထမ်းများမှလည်း ချက်ချင်း ပြန်လည်ဖြေကြားပေးနေပါတယ်ရှင်။ ဝယ်ယူလိုပါက 'ဝယ်မယ်' ဟု ရေးပေးပါရှင်။")
             return
             
         elif state["step"] == "waiting_product":
@@ -139,7 +108,7 @@ def process_async_message(sender_id, customer_msg, message_data):
         elif state["step"] == "waiting_phone":
             state["phone"] = customer_msg
             
-            # COD မြို့နယ် စစ်ဆေးခြင်း
+            # COD မြို့နယ် ဟုတ်/မဟုတ် စစ်ဆေးခြင်း
             sheet_townships = call_google_script({"action": "read_cod_townships"})
             cod_available = False
             if sheet_townships and "data" in sheet_townships:
@@ -162,7 +131,6 @@ def process_async_message(sender_id, customer_msg, message_data):
                 send_telegram_message(PACKING_GROUP, pk_alert)
                 state["step"] = "completed"
             else:
-                # settings tab မှ ဘဏ်စာရင်းများကို ဖတ်ယူခြင်း
                 sheet_banks = call_google_script({"action": "read_banks", "sheet_name": "settings"})
                 bank_info = ""
                 if sheet_banks and "data" in sheet_banks and len(sheet_banks["data"]) > 0:
@@ -172,7 +140,7 @@ def process_async_message(sender_id, customer_msg, message_data):
                         b_owner = b.get("account_name") or b.get("accountname") or ""
                         bank_info += f"🔹 {b_name}: {b_no} ({b_owner})\n"
                 else:
-                    bank_info = "🔹 KBZ Pay: 09xxxxxx\n🔹 Wave Pay: 09xxxxxx\n"
+                    bank_info = "🔹 KBZ Pay: 094444444xx\n🔹 Wave Pay: 094444444xx\n"
                         
                 reply_msg = (
                     f"လူကြီးမင်းတို့ မြို့နယ်သည် COD မရရှိနိုင်သေးသောကြောင့် ငွေကြိုလွှဲစနစ်ဖြင့်သာ ဆောင်ရွက်ပေးရပါမည်ရှင်။\n\n"
@@ -183,14 +151,12 @@ def process_async_message(sender_id, customer_msg, message_data):
                 state["step"] = "waiting_screenshot"
             return
 
-        send_fb_message(sender_id, ai_reply)
     except Exception as e:
-        print(f"❌ Core Logic Process Error: {e}")
-        send_fb_message(sender_id, "မင်္ဂလာပါရှင်၊ ခေတ္တစောင့်ဆိုင်းပေးပါဦးရှင်။")
+        print(f"❌ Core Process Error: {e}")
 
 @app.route('/', methods=['GET'])
 def home():
-    return "🚀 Live Dedicated Engine v100.0 [Production Master Build] - Online!"
+    return "🚀 Live Dedicated Engine v120.0 [Ultra Clean Protocol] - Online!"
 
 @app.route('/webhook', methods=['GET', 'POST'])
 def webhook():
@@ -214,10 +180,8 @@ def webhook():
                             sender_id = str(messaging_event["sender"]["id"])
                             customer_msg = message_data.get("text", "").strip()
                             
-                            # Background Thread ဖြင့် သီးသန့်အမြန်ဆုံး ခွဲလုပ်ခိုင်းခြင်း
                             t = threading.Thread(target=process_async_message, args=(sender_id, customer_msg, message_data))
                             t.start()
-
                 return "EVENT_RECEIVED", 200
         except Exception as e:
             return "EVENT_RECEIVED", 200
@@ -251,7 +215,7 @@ def telegram_webhook():
                     f"💳 *ငွေချေစနစ်:* Pre-paid"
                 )
                 send_telegram_message(PACKING_GROUP, pk_alert)
-                send_fb_message(c_id, "လူကြီးမင်း၏ ငွေလွှဲမှုကို အတည်ပြုပြီးပါပြီရှင်။ ပစ္စည်းများကို ထုပ်ပိုးရေးဌာနသို့ လွှဲပြောင်းပေးလိုက်ပြီဖြစ်လို့ ခေတ္တစောင့်ဆိုင်းပေးပါရှင်။")
+                send_fb_message(c_id, "လူကြီးမင်း၏ Ngwe Lwal Mhu Ko အတည်ပြုပြီးပါပြီရှင်။ ပစ္စည်းများကို ထုပ်ပိုးရေးဌာနသို့ လွှဲပြောင်းပေးလိုက်ပြီဖြစ်လို့ ခေတ္တစောင့်ဆိုင်းပေးပါရှင်။")
                 
                 requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/editMessageText", json={
                     "chat_id": chat_id, "message_id": message_id,
@@ -268,7 +232,6 @@ def telegram_webhook():
                 })
                 
             requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/answerCallbackQuery", json={"callback_query_id": cb_id})
-
         return jsonify({"status": "ok"}), 200
     except:
         return jsonify({"status": "ok"}), 200
