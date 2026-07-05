@@ -6,9 +6,8 @@ import threading
 
 app = Flask(__name__)
 
-# --- CONFIGURATION SETUP ---
+# --- PAGE ACCESS TOKEN CONFIG ---
 PAGE_ACCESS_TOKEN = "EAAWTc0UsYPgBR45NIFxOFGnOPn8ji8WlcseZAF483nv1I8VoRXa3ryPUyBLsclEgEGf3hZBlZASNZAnssvA7PnIBg0paS4zBVu7CmdTrqOS21zTpUSgIXDAVxT8UoF6seZAZB6mtkUeEkAdoSWhfPfJLUdzYnmxBZAynxW1OJvvk78FySknSOZA33MIGRzMLPh45OBH1WKwvIwZDZD"
-SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx59Jc9RzVTD_3x2oC9RSAxVE-mLkjCwjMvld1N5yk8-ej4UFvPyQhqO9W01sfBjcYS/exec"
 
 if not hasattr(app, 'processed_mid'): app.processed_mid = set()
 
@@ -25,44 +24,23 @@ def send_fb_message(recipient_id, text_reply):
     except Exception as e:
         print(f"❌ FB SEND EXCEPTION: {e}")
 
-def call_google_script(payload):
-    try:
-        res = requests.post(SCRIPT_URL, headers={"Content-Type": "application/json"}, data=json.dumps(payload), timeout=12)
-        if res.status_code == 200: return res.json()
-    except: pass
-    return None
-
-# --- GOOGLE SHEET + SMART OMNI CHAT ENGINE ---
+# --- PURE conversational CHAT ENGINE (မေးသမျှ အလိုက်သင့် ဖြေကြားပေးမည့်အပိုင်း) ---
 def process_async_message(sender_id, customer_msg):
     try:
-        # ၁။ Google Sheet ထဲက လက်ရှိ ပစ္စည်းစာရင်းနဲ့ စျေးနှုန်းတွေကို Real-time ဖတ်ယူခြင်း
-        sheet_data = call_google_script({"action": "read"})
-        inventory_context = ""
-        if sheet_data and sheet_data.get("status") == "success" and "data" in sheet_data:
-            inventory_context = "📦 ဆိုင်ရှိ လက်ရှိရရှိနိုင်သော ပစ္စည်းစာရင်းနှင့် စျေးနှုန်းများ -\n"
-            for item in sheet_data["data"]:
-                p_name = item.get("product_name") or item.get("productname") or ""
-                p_price = item.get("price") or "ညှိနှိုင်း"
-                p_stock = item.get("stock") or "0"
-                if p_name:
-                    inventory_context += f"- {p_name} | စျေး: {p_price} ကျပ် | လက်ကျန်: {p_stock} ခု\n"
-
-        # ၂။ AI ကို ဘာမေးမေး အလိုက်သင့် ညင်သာစွာ ဖြေကြားတတ်စေရန် Rules ပေးခြင်း
+        # AI ကို ဘာမေးမေး အလိုက်သင့် ယဉ်ကျေးပျူငှာစွာ စာပြန်တတ်စေရန် ညွှန်ကြားခြင်း
         system_instruction = (
-            "မင်းက မြန်မာနိုင်ငံက နာမည်ကြီး Online Shop အရောင်းဝန်ထမ်း AI ဖြစ်တယ်။ "
-            "ကာစတန်မာက ဘာပဲလာမေးမေး (နှုတ်ဆက်တာ၊ ပစ္စည်းအကြောင်း၊ စျေးမေးတာ၊ complain တက်တာ သို့မဟုတ် အထွေထွေစကားပြောတာ) "
+            "မင်းက မြန်မာနိုင်ငံက နာမည်ကြီး Online Shop တစ်ခုရဲ့ အရောင်းဝန်ထမ်း AI ဖြစ်တယ်။ "
+            "ကာစတန်မာက ဘာပဲလာမေးမေး (မင်္ဂလာပါလို့ နှုတ်ဆက်တာ၊ ပစ္စည်းအကြောင်း၊ စျေးနှုန်းမေးတာ၊ complain တက်တာ သို့မဟုတ် တခြားအထွေထွေ စကားပြောတာ) "
             "အားလုံးကို အလိုက်သင့် ယဉ်ကျေးပျူငှာစွာနှင့် လိုရင်းတိုရှင်း မြန်မာလို အကောင်းဆုံး ပြန်လည်ဖြေကြားပေးရမယ်။ "
-            "ပစ္စည်းအကြောင်း သို့မဟုတ် စျေးနှုန်းများ မေးလာပါက ပေးထားသော ပစ္စည်းစာရင်း (Inventory Context) ထဲကအတိုင်း တိတိကျကျ ဆွဲဖတ်ပြီး ဖြေပေးပါ။ "
-            "အကယ်၍ ကာစတန်မာက မကျေနပ်ချက် (Complain) သို့မဟုတ် အခက်အခဲများ လာရောက်ပြောဆိုပါက စိတ်မဆိုးပါနှင့်၊ "
-            "ဝန်ထမ်းများနှင့် ချက်ချင်း ညှိနှိုင်းဖြေရှင်းပေးမည်ဖြစ်ကြောင်း အလိုက်သင့် ချော့မော့ညင်သာစွာ တုံ့ပြန်ပေးပါ။"
+            "လူကြီးမင်းတို့ စိတ်ကျေနပ်မှုရအောင် ပျူငှာစွာ တုံ့ပြန်ပေးပါရှင်။"
         )
 
         gemini_payload = {
-            "contents": [{"parts": [{"text": f"{inventory_context}\n\nCustomer: {customer_msg}"}]}],
+            "contents": [{"parts": [{"text": f"Customer: {customer_msg}"}]}],
             "systemInstruction": {"parts": [{"text": system_instruction}]}
         }
         
-        # ၃။ Gemini AI API သို့ လှမ်းခေါ်ခြင်း
+        # Gemini AI API သို့ လှမ်းခေါ်ခြင်း
         gemini_res = requests.post(get_gemini_url(), headers={'Content-Type': 'application/json'}, data=json.dumps(gemini_payload), timeout=12)
         res_json = gemini_res.json()
         
@@ -71,9 +49,9 @@ def process_async_message(sender_id, customer_msg):
             ai_reply = res_json["candidates"][0]["content"]["parts"][0]["text"].strip()
         
         if not ai_reply:
-            ai_reply = "မင်္ဂလာပါရှင်၊ လူကြီးမင်းမေးမြန်းမှုကို ဝန်ထမ်းများမှ မကြာမီ စစ်ဆေးဖြေကြားပေးပါမည်ရှင်။"
+            ai_reply = "မင်္ဂလာပါရှင်၊ လူကြီးမင်းမေးမြန်းထားသော အကြောင်းအရာကို အမြန်ဆုံး စစ်ဆေးဖြေကြားပေးပါမည်ရှင်။"
 
-        # ၄။ Facebook Messenger သို့ Message ပေးပို့ခြင်း
+        # Facebook Messenger သို့ စာပြန်ပို့ခြင်း
         send_fb_message(sender_id, ai_reply)
 
     except Exception as e:
@@ -82,7 +60,7 @@ def process_async_message(sender_id, customer_msg):
 
 @app.route('/', methods=['GET'])
 def home():
-    return "🚀 Live Dedicated Engine v160.0 [Omni Intelligent Chat + Google Sheet] - Online!"
+    return "🚀 Live Dedicated Engine v170.0 [Pure Conversational ChatBot] - Online!"
 
 @app.route('/webhook', methods=['GET', 'POST'])
 def webhook():
@@ -107,6 +85,7 @@ def webhook():
                             customer_msg = message_data.get("text", "").strip()
                             if not customer_msg: continue
                             
+                            # Background Thread ဖြင့် သီးသန့် အမြန်ဆုံး စာပြန်ခိုင်းခြင်း
                             t = threading.Thread(target=process_async_message, args=(sender_id, customer_msg))
                             t.start()
                 return "EVENT_RECEIVED", 200
