@@ -21,7 +21,7 @@ def send_fb_message(recipient_id, text_reply):
     try:
         url = f"https://graph.facebook.com/v21.0/me/messages?access_token={PAGE_ACCESS_TOKEN}"
         payload = {"recipient": {"id": str(recipient_id)}, "message": {"text": text_reply}}
-        res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=8)
+        res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=10)
         print(f"📡 FB SEND STATUS: {res.status_code}")
     except Exception as e:
         print(f"❌ FB SEND EXCEPTION: {e}")
@@ -51,11 +51,13 @@ def send_telegram_message(chat_id, text):
 def call_google_script(payload):
     try:
         res = requests.post(SCRIPT_URL, headers={"Content-Type": "application/json"}, data=json.dumps(payload), timeout=15)
-        if res.status_code == 200: return res.json()
-    except: pass
+        if res.status_code == 200: 
+            return res.json()
+    except Exception as e:
+        print(f"❌ GOOGLE SCRIPT CONNECTION ERROR: {e}")
     return None
 
-# --- FAIL-SAFE CORE INTELLIGENCE (NO API KEY REQUIRED) ---
+# --- REAL-TIME GOOGLE SHEET READ ENGINE ---
 def process_async_message(sender_id, customer_msg, message_data):
     try:
         # ၁။ ပုံ/Screenshot စစ်ဆေးခြင်း
@@ -83,14 +85,36 @@ def process_async_message(sender_id, customer_msg, message_data):
         state = app.user_states[sender_id]
         msg_lower = customer_msg.lower()
 
-        # ၂။ မှာယူမည့်အဆင့်များကို API မလိုဘဲ စနစ်တကျ မေးမြန်းခြင်း Flow
+        # ၂။ မှာယူမည့်အဆင့်များကို စနစ်တကျ မေးမြန်းခြင်း Flow
         if state["step"] == "browsing":
-            buy_keywords = ["ဝယ်", "ယူမယ်", "မှာမယ်", "buy", "order", "ဈေးဘယ်လောက်", "price"]
+            buy_keywords = ["ဝယ်", "ယူမယ်", "မှာမယ်", "buy", "order"]
+            price_keywords = ["ဈေး", "စျေး", "ဘယ်လောက်", "price", "ကောက်"]
+            
+            # Google Sheet မှ Data ကို အရင်ဆုံး မဖြစ်မနေ ဆွဲဖတ်ခြင်း
+            sheet_data = call_google_script({"action": "read"})
+            inventory_text = "🛍️ *လက်ရှိရရှိနိုင်သော ပစ္စည်းများနှင့် စျေးနှုန်းများ -*\n\n"
+            has_items = False
+            
+            if sheet_data and sheet_data.get("status") == "success" and "data" in sheet_data:
+                for item in sheet_data["data"]:
+                    p_name = item.get("product_name") or item.get("productname") or ""
+                    p_price = item.get("price") or ""
+                    p_stock = item.get("stock") or "0"
+                    if p_name:
+                        inventory_text += f"▪️ {p_name} - စျေး: {p_price} ကျပ် (လက်ကျန်: {p_stock})\n"
+                        has_items = True
+
             if any(k in msg_lower for k in buy_keywords):
                 state["step"] = "waiting_product"
                 send_fb_message(sender_id, "မင်္ဂလာပါရှင်၊ ဝယ်ယူမည့် ပစ္စည်းအမည်နှင့် အရေအတွက်ကို ပြောပေးပါရှင်။")
+            elif any(k in msg_lower for k in price_keywords):
+                if has_items:
+                    send_fb_message(sender_id, inventory_text + "\nဝယ်ယူလိုပါက ပစ္စည်းအမည်ကို ပြောကြားပေးနိုင်ပါတယ်ရှင်။")
+                else:
+                    send_fb_message(sender_id, "မင်္ဂလာပါရှင်၊ လက်ရှိတွင် ပစ္စည်းစာရင်းကို Google Sheet မှ မဖတ်နိုင်သေးပါသဖြင့် ခေတ္တ စောင့်ဆိုင်းပေးပါရှင်။")
             else:
-                send_fb_message(sender_id, "မင်္ဂလာပါရှင်၊ လူကြီးမင်းတို့ သိလိုသမျှ ပစ္စည်းအမေးအမြန်းများကို ဝန်ထမ်းများမှလည်း ချက်ချင်း ပြန်လည်ဖြေကြားပေးနေပါတယ်ရှင်။ ဝယ်ယူလိုပါက 'ဝယ်မယ်' ဟု ရေးပေးပါရှင်။")
+                welcome_msg = "မင်္ဂလာပါရှင်၊ AI Shop Agent မှ ကြိုဆိုပါတယ်။ ပစ္စည်းစျေးနှုန်းများ သိရှိလိုပါက 'စျေးဘယ်လောက်လဲ' ဟု မေးမြန်းနိုင်ပြီး၊ ဝယ်ယူလိုပါက 'ဝယ်မယ်' ဟု ပြောပေးပါရှင်။"
+                send_fb_message(sender_id, welcome_msg)
             return
             
         elif state["step"] == "waiting_product":
@@ -143,7 +167,7 @@ def process_async_message(sender_id, customer_msg, message_data):
                     bank_info = "🔹 KBZ Pay: 094444444xx\n🔹 Wave Pay: 094444444xx\n"
                         
                 reply_msg = (
-                    f"လူကြီးမင်းတို့ မြို့နယ်သည် COD မရရှိနိုင်သေးသောကြောင့် ငွေကြိုလွှဲစနစ်ဖြင့်သာ ဆောင်ရွက်ပေးရပါမည်ရှင်။\n\n"
+                    f"လူကြီးမင်းတို့ မြို့နယ်သည် COD မရရှိနိုင်သေးသောကြောင့် Ngwe Kyo Lwal Tshin Byaing Thart Thar Saung Ywet Pay Ya Par Myi Shin.\n\n"
                     f"💰 *လွှဲရမည့် ဘဏ်အကောင့်များ -*\n{bank_info}\n"
                     f"ငွေလွှဲပြီးပါက ငွေလွှဲပြေစာ (Screenshot) လေး ပေးပို့ပေးပါရှင်။"
                 )
@@ -156,7 +180,7 @@ def process_async_message(sender_id, customer_msg, message_data):
 
 @app.route('/', methods=['GET'])
 def home():
-    return "🚀 Live Dedicated Engine v120.0 [Ultra Clean Protocol] - Online!"
+    return "🚀 Live Dedicated Engine v130.0 [Google Sheet Stabilized Build] - Online!"
 
 @app.route('/webhook', methods=['GET', 'POST'])
 def webhook():
@@ -215,7 +239,7 @@ def telegram_webhook():
                     f"💳 *ငွေချေစနစ်:* Pre-paid"
                 )
                 send_telegram_message(PACKING_GROUP, pk_alert)
-                send_fb_message(c_id, "လူကြီးမင်း၏ Ngwe Lwal Mhu Ko အတည်ပြုပြီးပါပြီရှင်။ ပစ္စည်းများကို ထုပ်ပိုးရေးဌာနသို့ လွှဲပြောင်းပေးလိုက်ပြီဖြစ်လို့ ခေတ္တစောင့်ဆိုင်းပေးပါရှင်။")
+                send_fb_message(c_id, "လူကြီးမင်း၏ ငွေလွှဲမှုကို အတည်ပြုပြီးပါပြီရှင်။ ပစ္စည်းများကို ထုပ်ပိုးရေးဌာနသို့ လွှဲပြောင်းပေးလိုက်ပြီဖြစ်လို့ ခေတ္တစောင့်ဆိုင်းပေးပါရှင်။")
                 
                 requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/editMessageText", json={
                     "chat_id": chat_id, "message_id": message_id,
@@ -224,7 +248,7 @@ def telegram_webhook():
                 
             elif data_field.startswith("rej_"):
                 c_id = data_field.replace("rej_", "")
-                send_fb_message(c_id, "လူကြီးမင်း ပေးပို့လာသော ငွေလွှဲပြေစာအား စစ်ဆေးရာတွင် အဆင်မပြေမှုတစ်ခုရှိနေပါသဖြင့် ဝန်ထမ်းများမှ ချက်ချင်း ဆက်သွယ်ပေးပါမည်ရှင်။")
+                send_fb_message(c_id, "လူကြီးမင်း ပေးပို့လာသော Ngwe Lwal Prisary အား စစ်ဆေးရာတွင် အဆင်မပြေမှုတစ်ခုရှိနေပါသဖြင့် ဝန်ထမ်းများမှ ချက်ချင်း ဆက်သွယ်ပေးပါမည်ရှင်။")
                 
                 requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/editMessageText", json={
                     "chat_id": chat_id, "message_id": message_id,
