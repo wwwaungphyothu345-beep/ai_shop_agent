@@ -36,13 +36,11 @@ def call_google_script(action, extra_data=None):
 def ask_gemini_agent(system_prompt, user_msg, chat_history):
     try:
         if not GEMINI_API_KEY:
-            print("⚠️ GEMINI_API_KEY IS NONE IN ENVIRONMENT")
+            print("⚠️ GEMINI_API_KEY IS LITERALLY MISSING IN ENVIRONMENT")
             return "ERROR_API_KEY_MISSING"
             
-        # Standard Gemini 1.5 Flash Endpoint
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
         
-        # Format ကို သေချာကိုက်ညီအောင် တည်ဆောက်ခြင်း
         formatted_contents = []
         for chat in chat_history[-6:]:
             formatted_contents.append({
@@ -50,7 +48,6 @@ def ask_gemini_agent(system_prompt, user_msg, chat_history):
                 "parts": [{"text": chat["text"]}]
             })
             
-        # လက်ရှိ User ပို့လိုက်တဲ့စာကို ထည့်ခြင်း
         formatted_contents.append({
             "role": "user",
             "parts": [{"text": user_msg}]
@@ -62,18 +59,18 @@ def ask_gemini_agent(system_prompt, user_msg, chat_history):
                 "parts": [{"text": system_prompt}]
             },
             "generationConfig": {
-                "temperature": 0.2
+                "temperature": 0.3
             }
         }
         
         res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=15)
-        print(f"🤖 Gemini API Status Response: {res.status_code}")
+        print(f"🤖 Gemini API Status Response Code: {res.status_code}")
         
         if res.status_code == 200:
             res_data = res.json()
             return res_data['candidates'][0]['message']['parts'][0]['text']
         else:
-            print(f"❌ Gemini Error API Response Payload: {res.text}")
+            print(f"❌ Gemini API Error Message: {res.text}")
     except Exception as e:
         print(f"❌ Gemini Exception Occurred: {e}")
     return "ERROR_GEMINI_FAIL"
@@ -84,9 +81,10 @@ def process_async_message(sender_id, customer_msg):
         cod_res = call_google_script("read_cod")
         setting_res = call_google_script("read_setting")
         
-        products = prod_res.get("data", []) if prod_res else []
-        cod_cities = cod_res.get("data", []) if cod_res else []
-        settings = setting_res.get("data", {}) if setting_res else {}
+        # 🛡️ Safe check format (အကယ်၍ Sheet ထဲက none ပြန်လာရင် မပျက်ကျအောင်ကာကွယ်ခြင်း)
+        products = (prod_res.get("data", []) if prod_res else []) or []
+        cod_cities = (cod_res.get("data", []) if cod_res else []) or []
+        settings = (setting_res.get("data", {}) if setting_res else {}) or {}
 
         shop_context = f"""
         သင်သည် ယဉ်ကျေးပျူငှာသော မြန်မာ AI Shop Assistant တစ်ဦးဖြစ်သည်။
@@ -142,7 +140,7 @@ def process_async_message(sender_id, customer_msg):
 @app.route('/', methods=['GET'])
 def home():
     key_status = "Detected ✅" if GEMINI_API_KEY else "Missing ❌"
-    return f"🚀 Engine v370.0 - Gemini Payload Optimized - API Key Status: {key_status}"
+    return f"🚀 Engine v380.0 - Robust Sheet Parsing - API Key Status: {key_status}"
 
 @app.route('/webhook', methods=['GET', 'POST'])
 def webhook():
