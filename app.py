@@ -6,7 +6,7 @@ import threading
 
 app = Flask(__name__)
 
-# --- PAGE ACCESS TOKEN ---
+# --- CONFIGURATION SETUP ---
 PAGE_ACCESS_TOKEN = "EAAWTc0UsYPgBR45NIFxOFGnOPn8ji8WlcseZAF483nv1I8VoRXa3ryPUyBLsclEgEGf3hZBlZASNZAnssvA7PnIBg0paS4zBVu7CmdTrqOS21zTpUSgIXDAVxT8UoF6seZAZB6mtkUeEkAdoSWhfPfJLUdzYnmxBZAynxW1OJvvk78FySknSOZA33MIGRzMLPh45OBH1WKwvIwZDZD"
 SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx59Jc9RzVTD_3x2oC9RSAxVE-mLkjCwjMvld1N5yk8-ej4UFvPyQhqO9W01sfBjcYS/exec"
 
@@ -34,10 +34,10 @@ def call_google_script(payload):
     except: pass
     return None
 
-# --- HUMAN-LIKE SALES BOT CORE ---
+# --- HUMAN-LIKE SALES BOT WITH GOOGLE SHEET SYNC ---
 def process_async_message(sender_id, customer_msg):
     try:
-        # ၁။ Google Sheet ထဲက လက်ရှိ ပစ္စည်းစာရင်းနဲ့ စျေးနှုန်းများကို ကြိုတင်ဖတ်ယူခြင်း
+        # ၁။ Google Sheet ထဲက လက်ရှိ ပစ္စည်းစာရင်းနဲ့ စျေးနှုန်းများကို ဆွဲဖတ်ခြင်း
         sheet_data = call_google_script({"action": "read"})
         inventory_context = ""
         if sheet_data and sheet_data.get("status") == "success" and "data" in sheet_data:
@@ -54,7 +54,7 @@ def process_async_message(sender_id, customer_msg):
             "မင်းက မြန်မာနိုင်ငံက Online Shop တစ်ခုရဲ့ သွက်လက်ချက်ချာပြီး သဘောကောင်းတဲ့ 'လူ' အရောင်းစာရေးမလေး ဖြစ်တယ်။ "
             "စက်ရုပ်လို အသေစာသားတွေ လုံးဝမသုံးပါနဲ့။ ကာစတန်မာက ဘာပဲလာမေးမေး (နှုတ်ဆက်တာ၊ စျေးမေးတာ၊ ပစ္စည်းအကြောင်း၊ Complain တက်တာ သို့မဟုတ် စနောက်တာ) "
             "အားလုံးကို တကယ့်လူတစ်ယောက်လိုပဲ အလိုက်သင့် ယဉ်ကျေးပျူငှာစွာနှင့် စမတ်ကျကျ မြန်မာလို ပြန်လည်ဖြေကြားပေးရမယ်။ "
-            "ပစ္စည်းစျေးနှုန်း သို့မဟုတ် လက်ကျန်အခြေအနေကို မေးလာရင် ပေးထားတဲ့ ပစ္စည်းစာရင်း (Inventory Context) ကို လူလိုပဲ ဖတ်ပြီး တိတိကျကျ ဖြေပေးပါ။ "
+            "ပစ္စည်းစျေးနှုန်း သို့မဟုတ် လက်ကျန်အခြေအနေကို မေးလာရင် ပေးထားတဲ့ ပစ္စည်းစာရင်း (Inventory Context) ကို လူလိုပဲ ဖတ်ပြီး တิတိကျကျ ဖြေပေးပါ။ "
             "အကယ်၍ ကာစတန်မာက ပစ္စည်းမှာယူလိုကြောင်း၊ ဝယ်ယူလိုကြောင်း ပြောလာပါက သို့မဟုတ် အချက်အလက်ပေးလာပါက "
             "အမှာစာကို စနစ်တကျ မှတ်တမ်းတင်ပေးပါမည်ဟု ယဉ်ကျေးစွာ ပြောကြားပေးပါ။"
         )
@@ -84,7 +84,7 @@ def process_async_message(sender_id, customer_msg):
 
 @app.route('/', methods=['GET'])
 def home():
-    return "🚀 Live Dedicated Engine v210.0 [Pure Human Chat Mode] - Online!"
+    return "🚀 Live Dedicated Engine v210.0 [Pure Human Chat Mode + Sheet Sync] - Online!"
 
 @app.route('/webhook', methods=['GET', 'POST'])
 def webhook():
