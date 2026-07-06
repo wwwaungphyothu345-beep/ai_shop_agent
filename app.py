@@ -8,8 +8,10 @@ app = Flask(__name__)
 
 # --- CONFIGURATION SETUP ---
 PAGE_ACCESS_TOKEN = "EAAWTc0UsYPgBR45NIFxOFGnOPn8ji8WlcseZAF483nv1I8VoRXa3ryPUyBLsclEgEGf3hZBlZASNZAnssvA7PnIBg0paS4zBVu7CmdTrqOS21zTpUSgIXDAVxT8UoF6seZAZB6mtkUeEkAdoSWhfPfJLUdzYnmxBZAynxW1OJvvk78FySknSOZA33MIGRzMLPh45OBH1WKwvIwZDZD"
-SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxQ7-2n6atk5XKv5wV0Kfhb5x1CcIu9qNPkSKUO8ElEI9iwdW1qyQCSZtMNsHIhdZh3Pg/exec"
-GEMINI_API_KEY = "YOUR_GEMINI_API_KEY_HERE" # <- သင့် Gemini API Key ကို ဤနေရာတွင် ထည့်ပါ
+SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx59Jc9RzVTD_3x2oC9RSAxVE-mLkjCwjMvld1N5yk8-ej4UFvPyQhqO9W01sfBjcYS/exec"
+
+# 🌟 Render ရဲ့ Environment Variables ထဲက GEMINI_API_KEY ကို ဆွဲယူခြင်း
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 if not hasattr(app, 'processed_mid'): app.processed_mid = set()
 if not hasattr(app, 'chat_memory'): app.chat_memory = {}
@@ -35,6 +37,10 @@ def call_google_script(action, extra_data=None):
 
 def ask_gemini_agent(system_prompt, user_msg, chat_history):
     try:
+        if not GEMINI_API_KEY:
+            print("⚠️ ERROR: GEMINI_API_KEY is not set in Render Environment Variables!")
+            return "စနစ်ပြင်ဆင်မှု လိုအပ်နေပါသဖြင့် ခေတ္တစောင့်ဆိုင်းပေးပါရှင်။"
+            
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
         
         contents = []
@@ -116,7 +122,7 @@ def process_async_message(sender_id, customer_msg):
 
 @app.route('/', methods=['GET'])
 def home():
-    return "🚀 Live AI-Agent Multi-Sheet Sync Engine v310.0 https://dictionary.cambridge.org/dictionary/english/updated - Online!"
+    return "🚀 Live AI-Agent Engine v320.0 [Render Env Integrated] - Online!"
 
 @app.route('/webhook', methods=['GET', 'POST'])
 def webhook():
