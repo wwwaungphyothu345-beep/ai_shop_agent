@@ -12,12 +12,6 @@ SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx59Jc9RzVTD_3x2oC9RSAxVE-
 
 if not hasattr(app, 'processed_mid'): app.processed_mid = set()
 
-def get_gemini_url():
-    current_key = (os.environ.get("GEMINI_API_KEY", "").strip() or 
-                   os.environ.get("gemini_api_key", "").strip() or 
-                   os.environ.get("Gemini_Api_Key", "").strip())
-    return f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={current_key}"
-
 def send_fb_message(recipient_id, text_reply):
     try:
         url = f"https://graph.facebook.com/v21.0/me/messages?access_token={PAGE_ACCESS_TOKEN}"
@@ -34,57 +28,37 @@ def call_google_script(payload):
     except: pass
     return None
 
-# --- HUMAN-LIKE SALES BOT WITH GOOGLE SHEET SYNC ---
+# --- PURE GOOGLE SHEET READ & REPLY ENGINE ---
 def process_async_message(sender_id, customer_msg):
     try:
-        # ၁။ Google Sheet ထဲက လက်ရှိ ပစ္စည်းစာရင်းနဲ့ စျေးနှုန်းများကို ဆွဲဖတ်ခြင်း
+        # ၁။ Google Sheet ထဲက လက်ရှိ ပစ္စည်းစာရင်းနဲ့ စျေးနှုန်းများကို Real-time တိုက်ရိုက်ဆွဲဖတ်ခြင်း
         sheet_data = call_google_script({"action": "read"})
-        inventory_context = ""
+        
+        # ၂။ စာရင်းဖတ်ရရှိပါက လူကြီးမင်း၏ Google Sheet ပါ data များကို တန်းစီပြီး စာသားထုတ်ပေးခြင်း
         if sheet_data and sheet_data.get("status") == "success" and "data" in sheet_data:
-            inventory_context = "📦 ဆိုင်ရှိ လက်ရှိရရှိနိုင်သော ပစ္စည်းစာရင်းနှင့် စျေးနှုန်းများ -\n"
+            reply_text = "🛍️ *မင်္ဂလာပါရှင်၊ လက်ရှိရရှိနိုင်သော ပစ္စည်းများနှင့် စျေးနှုန်းများဖြစ်ပါတယ်ရှင် -*\n\n"
             for item in sheet_data["data"]:
                 p_name = item.get("product_name") or item.get("productname") or ""
                 p_price = item.get("price") or "ညှိနှိုင်း"
                 p_stock = item.get("stock") or "0"
                 if p_name:
-                    inventory_context += f"- {p_name} | စျေး: {p_price} ကျပ် | လက်ကျန်: {p_stock} ခု\n"
+                    reply_text += f"▪️ {p_name} - စျေး: {p_price} ကျပ် (လက်ကျန်: {p_stock} ခု)\n"
+            
+            reply_text += "\nဝယ်ယူလိုပါက ပစ္စည်းအမည်ကို ပြောကြားပေးနိုင်ပါတယ်ရှင်။"
+        else:
+            # Google Script Web App Link သို့မဟုတ် Sheet Permissions မှားယွင်းနေပါက ပြသမည့်စာသား
+            reply_text = "⚠️ [Google Sheet Error]: Google Sheet မှ Data ဖတ်ယူ၍ မရနိုင်သေးပါ။ Web App URL (SCRIPT_URL) သို့မဟုတ် Sheet ထဲတွင် ပစ္စည်းစာရင်း ရှိမရှိ ပြန်လည်စစ်ဆေးပေးပါရှင်။"
 
-        # ၂။ AI ကို စက်ရုပ်လိုမဟုတ်ဘဲ "တကယ့်လူအရောင်းဝန်ထမ်း" အတိုင်း အလိုက်သင့် စကားပြောရန် ညွှန်ကြားခြင်း
-        system_instruction = (
-            "မင်းက မြန်မာနိုင်ငံက Online Shop တစ်ခုရဲ့ သွက်လက်ချက်ချာပြီး သဘောကောင်းတဲ့ 'လူ' အရောင်းစာရေးမလေး ဖြစ်တယ်။ "
-            "စက်ရုပ်လို အသေစာသားတွေ လုံးဝမသုံးပါနဲ့။ ကာစတန်မာက ဘာပဲလာမေးမေး (နှုတ်ဆက်တာ၊ စျေးမေးတာ၊ ပစ္စည်းအကြောင်း၊ Complain တက်တာ သို့မဟုတ် စနောက်တာ) "
-            "အားလုံးကို တကယ့်လူတစ်ယောက်လိုပဲ အလိုက်သင့် ယဉ်ကျေးပျူငှာစွာနှင့် စမတ်ကျကျ မြန်မာလို ပြန်လည်ဖြေကြားပေးရမယ်။ "
-            "ပစ္စည်းစျေးနှုန်း သို့မဟုတ် လက်ကျန်အခြေအနေကို မေးလာရင် ပေးထားတဲ့ ပစ္စည်းစာရင်း (Inventory Context) ကို လူလိုပဲ ဖတ်ပြီး တิတိကျကျ ဖြေပေးပါ။ "
-            "အကယ်၍ ကာစတန်မာက ပစ္စည်းမှာယူလိုကြောင်း၊ ဝယ်ယူလိုကြောင်း ပြောလာပါက သို့မဟုတ် အချက်အလက်ပေးလာပါက "
-            "အမှာစာကို စနစ်တကျ မှတ်တမ်းတင်ပေးပါမည်ဟု ယဉ်ကျေးစွာ ပြောကြားပေးပါ။"
-        )
-
-        gemini_payload = {
-            "contents": [{"parts": [{"text": f"{inventory_context}\n\nCustomer: {customer_msg}"}]}],
-            "systemInstruction": {"parts": [{"text": system_instruction}]}
-        }
-        
-        # ၃။ Gemini AI API သို့ လှမ်းခေါ်ခြင်း
-        gemini_res = requests.post(get_gemini_url(), headers={'Content-Type': 'application/json'}, data=json.dumps(gemini_payload), timeout=12)
-        res_json = gemini_res.json()
-        
-        ai_reply = ""
-        if "candidates" in res_json and len(res_json["candidates"]) > 0:
-            ai_reply = res_json["candidates"][0]["content"]["parts"][0]["text"].strip()
-        
-        if not ai_reply:
-            ai_reply = "မင်္ဂလာပါရှင်၊ လူကြီးမင်းမေးမြန်းမှုကို ဝန်ထမ်းများမှ မကြာမီ စစ်ဆေးဖြေကြားပေးပါမည်ရှင်။"
-
-        # ၄။ Facebook Messenger သို့ စာပြန်ပို့ခြင်း
-        send_fb_message(sender_id, ai_reply)
+        # ၃။ ကာစတန်မာထံသို့ Google Sheet ထဲကစာရင်းကို တိုက်ရိုက် စာပြန်ပေးခြင်း
+        send_fb_message(sender_id, reply_text)
 
     except Exception as e:
         print(f"❌ Core Process Error: {e}")
-        send_fb_message(sender_id, "မင်္ဂလာပါရှင်၊ လူကြီးမင်းမေးမြန်းထားသော အကြောင်းအရာကို ဝန်ထမ်းများမှ ချက်ချင်း ပြန်လည်ဖြေကြားပေးပါမည်ရှင်။")
+        send_fb_message(sender_id, "မင်္ဂလာပါရှင်၊ စနစ်အနည်းငယ် အလုပ်ရှုပ်နေပါသဖြင့် ခေတ္တစောင့်ဆိုင်းပေးပါရှင်။")
 
 @app.route('/', methods=['GET'])
 def home():
-    return "🚀 Live Dedicated Engine v210.0 [Pure Human Chat Mode + Sheet Sync] - Online!"
+    return "🚀 Live Dedicated Engine v230.0 [Pure Google Sheet Sync Mode] - Online!"
 
 @app.route('/webhook', methods=['GET', 'POST'])
 def webhook():
