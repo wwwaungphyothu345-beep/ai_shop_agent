@@ -36,23 +36,46 @@ def call_google_script(action, extra_data=None):
 def ask_gemini_agent(system_prompt, user_msg, chat_history):
     try:
         if not GEMINI_API_KEY:
+            print("⚠️ GEMINI_API_KEY IS NONE IN ENVIRONMENT")
             return "ERROR_API_KEY_MISSING"
+            
+        # Standard Gemini 1.5 Flash Endpoint
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
-        contents = []
+        
+        # Format ကို သေချာကိုက်ညီအောင် တည်ဆောက်ခြင်း
+        formatted_contents = []
         for chat in chat_history[-6:]:
-            contents.append({"role": chat["role"], "parts": [{"text": chat["text"]}]})
-        contents.append({"role": "user", "parts": [{"text": user_msg}]})
+            formatted_contents.append({
+                "role": "user" if chat["role"] == "user" else "model",
+                "parts": [{"text": chat["text"]}]
+            })
+            
+        # လက်ရှိ User ပို့လိုက်တဲ့စာကို ထည့်ခြင်း
+        formatted_contents.append({
+            "role": "user",
+            "parts": [{"text": user_msg}]
+        })
         
         payload = {
-            "systemInstruction": {"parts": [{"text": system_prompt}]},
-            "contents": contents,
-            "generationConfig": {"temperature": 0.2}
+            "contents": formatted_contents,
+            "systemInstruction": {
+                "parts": [{"text": system_prompt}]
+            },
+            "generationConfig": {
+                "temperature": 0.2
+            }
         }
+        
         res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=15)
+        print(f"🤖 Gemini API Status Response: {res.status_code}")
+        
         if res.status_code == 200:
-            return res.json()['candidates'][0]['message']['parts'][0]['text']
+            res_data = res.json()
+            return res_data['candidates'][0]['message']['parts'][0]['text']
+        else:
+            print(f"❌ Gemini Error API Response Payload: {res.text}")
     except Exception as e:
-        print(f"❌ Gemini Exception: {e}")
+        print(f"❌ Gemini Exception Occurred: {e}")
     return "ERROR_GEMINI_FAIL"
 
 def process_async_message(sender_id, customer_msg):
@@ -78,12 +101,12 @@ def process_async_message(sender_id, customer_msg):
         [COD မရပါက ငွေကြိုလွှဲရမည့် အချက်အလက် (Settings)]
         {json.dumps(settings, ensure_ascii=False)}
 
-        [အရေးကြီး စည်းကမ်းချက်များ]
-        ၁။ ပစ္စည်းဈေးနှုန်းနှင့် စတော့ခ်များကို 'ရရှိနိုင်သော ကုန်ပစ္စည်းစာရင်း' ထဲကအတိုင်း တိကျစွာဖြေပါ။
+        [စည်းကမ်းချက်များ]
+        ၁။ ပစ္စည်းဈေးနှုန်းနှင့် စတော့ခ်များကို ရရှိနိုင်သောကုန်ပစ္စည်းစာရင်းအတိုင်း တိကျစွာဖြေပါ။
         ၂။ ကာစတန်မာက ၎င်းတို့နေထိုင်သည့် မြို့ကို ပြောလာပါက 'COD ရသော မြို့များစာရင်း' ထဲတွင် ပါဝင်မှု ရှိမရှိ စစ်ဆေးပါ။
-           - ပါဝင်ပါက: COD ဖြင့် ပို့ဆောင်ပေးနိုင်ကြောင်း ပြောပါ။
-           - မပါဝင်ပါက: COD မရရှိနိုင်သဖြင့် Settings ထဲရှိ Kpay သို့မဟုတ် Wave pay အကောင့်သို့ ငွေကြိုလွှဲပေးရမည်ဖြစ်ကြောင်း သေချာရှင်းပြပါ။
-        ၃။ ကာစတန်မာက မှာယူရန် အချက်အလက် အပြည့်အစုံ (အမည်၊ ဖုန်း၊ လိပ်စာ၊ မှာယူမည့်ပစ္စည်း) တို့ကို ပေးလာပါက အော်ဒါစာရင်းကို အတည်ပြုပြီး "အော်ဒါစာရင်း မှတ်သားလိုက်ပါပြီရှင်" သို့မဟုတ် "အော်ဒါတင်ပေးလိုက်ပါပြီ" ဟူသော စကားလုံးကို သေချာပေါက် ထည့်သွင်းပြောကြားပါ။
+           - ပါဝင်ပါက: COD ရကြောင်းပြောပါ။
+           - မပါဝင်ပါက: COD မရသဖြင့် Settings ထဲရှိ အကောင့်သို့ ငွေကြိုလွှဲပေးရမည်ဖြစ်ကြောင်း ရှင်းပြပါ။
+        ၃။ ကာစတန်မာက မှာယူရန် အချက်အလက် (အမည်၊ ဖုန်း၊ လိပ်စာ၊ ပစ္စည်း) ပေးလာပါက အော်ဒါစာရင်းကို အတည်ပြုပြီး "အော်ဒါစာရင်း မှတ်သားလိုက်ပါပြီရှင်" ဟု သေချာပေါက် ထည့်ပြောပါ။
         """
 
         if sender_id not in app.chat_memory:
@@ -92,23 +115,22 @@ def process_async_message(sender_id, customer_msg):
         ai_reply = ask_gemini_agent(shop_context, customer_msg, app.chat_memory[sender_id])
         
         if ai_reply == "ERROR_API_KEY_MISSING":
-            send_fb_message(sender_id, "⚠️ System Configuration Error: Gemini API Key is missing in Render Environment.")
+            send_fb_message(sender_id, "⚠️ System Config Error: GEMINI_API_KEY is missing in Render Env Variables.")
             return
         elif ai_reply == "ERROR_GEMINI_FAIL":
-            send_fb_message(sender_id, "စနစ်ခေတ္တအလုပ်များနေပါသဖြင့် ခေတ္တစောင့်ဆိုင်းပေးပါရှင်။")
+            send_fb_message(sender_id, "⚠️ AI Engine ချိတ်ဆက်မှု အဆင်မပြေပါ။ သင်၏ Gemini API Key သက်တမ်း သို့မဟုတ် စည်းကမ်းချက်များကို စစ်ဆေးပေးပါရန်။")
             return
 
         app.chat_memory[sender_id].append({"role": "user", "text": customer_msg})
         app.chat_memory[sender_id].append({"role": "model", "text": ai_reply})
 
-        # အော်ဒါ သိမ်းဆည်းရန် စစ်ဆေးခြင်း
         if "အော်ဒါစာရင်း မှတ်သား" in ai_reply or "အော်ဒါတင်ပေး" in ai_reply:
             order_payload = {
                 "order_data": {
                     "customer_name": "Facebook Customer",
-                    "phone": "စစ်ဆေးဆဲ/စာထဲတွင်ကြည့်ရန်",
+                    "phone": "စာထဲတွင်ကြည့်ရန်",
                     "address": "လိပ်စာစစ်ဆေးဆဲ",
-                    "order_details": f"Customer Msg: {customer_msg} | Bot Reply: {ai_reply}"
+                    "order_details": f"Msg: {customer_msg}"
                 }
             }
             call_google_script("write_order", order_payload)
@@ -120,7 +142,7 @@ def process_async_message(sender_id, customer_msg):
 @app.route('/', methods=['GET'])
 def home():
     key_status = "Detected ✅" if GEMINI_API_KEY else "Missing ❌"
-    return f"🚀 Engine v360.0 - URL Updated - API Key Status: {key_status}"
+    return f"🚀 Engine v370.0 - Gemini Payload Optimized - API Key Status: {key_status}"
 
 @app.route('/webhook', methods=['GET', 'POST'])
 def webhook():
